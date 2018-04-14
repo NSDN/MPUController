@@ -153,11 +153,13 @@ float cal[] = { 0, 0, 0 };
 
 bool mode = false; //false -> axis, true -> arrow
 
+#define ANGLE_ARROW 45.0F
+#define ANGLE_AXIS 75.0F
+float HALF_ANGLE = ANGLE_AXIS;
+
 inline float getYaw() { return myIMU.yaw - cal[0]; }
 inline float getPitch() { return myIMU.pitch - cal[1]; }
 inline float getRoll() { return myIMU.roll - cal[2]; }
-
-#define HALF_ANGLE 60.0F
 
 float fix(float angle) {
     angle += 180.0F;
@@ -213,33 +215,24 @@ void work() {
             bool down = (fix(getPitch()) - 180.0F) > (HALF_ANGLE / 2.0F);
             bool left = (fix(getRoll()) - 180.0F) < -(HALF_ANGLE / 2.0F);
             bool right = (fix(getRoll()) - 180.0F) > (HALF_ANGLE / 2.0F);
-            int8_t value = GAMEPAD_DPAD_CENTERED;
-            if (up && left) value = GAMEPAD_DPAD_UP_LEFT;
-            else if (up && right) value = GAMEPAD_DPAD_UP_RIGHT;
-            else if (down && left) value = GAMEPAD_DPAD_DOWN_LEFT;
-            else if (down && right) value = GAMEPAD_DPAD_DOWN_RIGHT;
-            else if (up) value = GAMEPAD_DPAD_UP;
-            else if (down) value = GAMEPAD_DPAD_DOWN;
-            else if (left) value = GAMEPAD_DPAD_LEFT;
-            else if (right) value = GAMEPAD_DPAD_RIGHT;
-            Gamepad.dPad1(value);
-
-            bool a = (fix(getYaw()) - 180.0F) > (HALF_ANGLE / 2.0F);
-            bool b = (fix(getYaw()) - 180.0F) < -(HALF_ANGLE / 2.0F);
-            if (a) Gamepad.press(3);
-            else Gamepad.release(3);
-            if (b) Gamepad.press(4);
-            else Gamepad.release(4);
+            if (up) Gamepad.yAxis(-32767);
+            else if (down) Gamepad.yAxis(32767);
+            else Gamepad.yAxis(0);
+            if (left) Gamepad.xAxis(-32767);
+            else if (right) Gamepad.xAxis(32767);
+            else Gamepad.xAxis(0);
         } else {
-            Gamepad.xAxis(mapf(fix(getPitch()), 32767));
-            Gamepad.yAxis(mapf(fix(getRoll()), 32767));
-            Gamepad.zAxis(mapf(fix(getYaw()), 127));
+            Gamepad.xAxis(mapf(fix(getRoll()), 32767));
+            Gamepad.yAxis(mapf(fix(getPitch()), 32767));
+            Gamepad.zAxis(mapf(fix(getYaw()), -127));
         }
 
         if (up && zlock) {
             mode = true;
+            HALF_ANGLE = ANGLE_ARROW;
         } else if (down && zlock) {
             mode = false;
+            HALF_ANGLE = ANGLE_AXIS;
         } else if (zlock && !up && !down) {
             Gamepad.xAxis(0);
             Gamepad.yAxis(0);
