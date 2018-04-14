@@ -50,14 +50,6 @@ void _readBytes(uint8_t address, uint8_t subAddress, uint8_t count, uint8_t * de
     }         // Put read results in the Rx buffer
 }
 
-float fix(float angle) {
-    while (angle < 0) angle += 360;
-    while (angle > 360) angle -= 360;
-    //if (angle < 0) angle = 0;
-    //if (angle > 360) angle = 360;
-    return angle;
-}
-
 void setup() {
     Wire.begin();
 #ifdef DEBUG_FLAG
@@ -146,24 +138,6 @@ void loop() {
             myIMU.pitch -= data[1];
             myIMU.roll -= data[2];
         }
-        /*
-        myIMU.yaw = fix(myIMU.yaw);
-        myIMU.pitch = fix(myIMU.pitch);
-        myIMU.roll = fix(myIMU.roll);
-        */
-    #ifdef DEBUG_FLAG
-        Serial.print("Yaw, Pitch, Roll:\t");
-        Serial.print(myIMU.yaw, 2);
-        Serial.print(",\t");
-        Serial.print(myIMU.pitch, 2);
-        Serial.print(",\t");
-        Serial.print(myIMU.roll, 2);
-
-        Serial.print(" || rate=\t");
-        Serial.print((float)myIMU.sumCount / myIMU.sum, 2);
-        Serial.println(" Hz");
-    #endif
-
         myIMU.count = millis();
     }
 
@@ -177,11 +151,43 @@ bool zlock = false;
 
 float cal[] = { 0, 0, 0 };
 
-float getYaw() { return myIMU.yaw - cal[0]; }
-float getPitch() { return myIMU.pitch - cal[1]; }
-float getRoll() { return myIMU.roll - cal[2]; }
+bool mode = false; //false -> axis, true -> arrow
+
+inline float getYaw() { return myIMU.yaw - cal[0]; }
+inline float getPitch() { return myIMU.pitch - cal[1]; }
+inline float getRoll() { return myIMU.roll - cal[2]; }
+
+#define HALF_ANGLE 60.0F
+
+float fix(float angle) {
+    angle += 180.0F;
+    while (angle < 0.0F) angle += 360.0F;
+    while (angle > 360.0F) angle -= 360.0F;
+    if (angle < (180.0F - HALF_ANGLE)) angle = (180.0F - HALF_ANGLE);
+    if (angle > (180.0F + HALF_ANGLE)) angle = (180.0F + HALF_ANGLE);
+    return angle;
+}
+
+int mapf(float in, int to) {
+    in -= 180.0F;
+    float result = (float) to / HALF_ANGLE * in;
+    return result;
+}
 
 void work() {
+    #ifdef DEBUG_FLAG
+        Serial.print("Yaw, Pitch, Roll:\t");
+        Serial.print(fix(getYaw() + 180), 2);
+        Serial.print(",\t");
+        Serial.print(fix(getPitch() + 180), 2);
+        Serial.print(",\t");
+        Serial.print(fix(getRoll() + 180), 2);
+
+        Serial.print(" || rate=\t");
+        Serial.print((float)myIMU.sumCount / myIMU.sum, 2);
+        Serial.println(" Hz");
+    #endif
+  
     up = down = left = right = zlock = false;
     
     digitalWrite(KEY_A, HIGH);
@@ -202,24 +208,47 @@ void work() {
             cal[2] = myIMU.roll;
         }
         
-        Gamepad.xAxis(map(fix(getPitch() + 180), 0, 360, -32767, 32767));
-        Gamepad.yAxis(map(fix(getRoll() + 180), 0, 360, -32767, 32767));
-        Gamepad.zAxis(map(fix(getYaw() + 180), 0, 360, -127, 127));
-        /*
-        Gamepad.rxAxis(map(fix(myIMU.yaw + 180), 0, 360, -32767, 32767));
-        Gamepad.ryAxis(map(fix(myIMU.pitch + 180), 0, 360, -32767, 32767));
-        Gamepad.rzAxis(map(fix(myIMU.roll + 180), 0, 360, -127, 127));
-        */
+        if (mode) {
+            bool up = (fix(getPitch()) - 180.0F) < -(HALF_ANGLE / 2.0F);
+            bool down = (fix(getPitch()) - 180.0F) > (HALF_ANGLE / 2.0F);
+            bool left = (fix(getRoll()) - 180.0F) < -(HALF_ANGLE / 2.0F);
+            bool right = (fix(getRoll()) - 180.0F) > (HALF_ANGLE / 2.0F);
+            int8_t value = GAMEPAD_DPAD_CENTERED;
+            if (up && left) value = GAMEPAD_DPAD_UP_LEFT;
+            else if (up && right) value = GAMEPAD_DPAD_UP_RIGHT;
+            else if (down && left) value = GAMEPAD_DPAD_DOWN_LEFT;
+            else if (down && right) value = GAMEPAD_DPAD_DOWN_RIGHT;
+            else if (up) value = GAMEPAD_DPAD_UP;
+            else if (down) value = GAMEPAD_DPAD_DOWN;
+            else if (left) value = GAMEPAD_DPAD_LEFT;
+            else if (right) value = GAMEPAD_DPAD_RIGHT;
+            Gamepad.dPad1(value);
 
-        if (up && !down) {
+            bool a = (fix(getYaw()) - 180.0F) > (HALF_ANGLE / 2.0F);
+            bool b = (fix(getYaw()) - 180.0F) < -(HALF_ANGLE / 2.0F);
+            if (a) Gamepad.press(3);
+            else Gamepad.release(3);
+            if (b) Gamepad.press(4);
+            else Gamepad.release(4);
+        } else {
+            Gamepad.xAxis(mapf(fix(getPitch()), 32767));
+            Gamepad.yAxis(mapf(fix(getRoll()), 32767));
+            Gamepad.zAxis(mapf(fix(getYaw()), 127));
+        }
+
+        if (up && zlock) {
+            mode = true;
+        } else if (down && zlock) {
+            mode = false;
+        } else if (zlock && !up && !down) {
+            Gamepad.xAxis(0);
+            Gamepad.yAxis(0);
+        } else if (up && !down) {
             Gamepad.yAxis(0);
             Gamepad.zAxis(0);
         } else if (!up && down) {
             Gamepad.xAxis(0);
             Gamepad.zAxis(0);
-        } else if (zlock) {
-            Gamepad.xAxis(0);
-            Gamepad.yAxis(0);
         }
 
         if (left) Gamepad.press(1);
