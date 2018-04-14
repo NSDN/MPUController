@@ -11,6 +11,13 @@ SoftWire Wire;
 
 //#define DEBUG_FLAG
 
+#define KEY_A 4
+#define KEY_B 5
+#define KEY_C 6
+#define KEY_1 A0
+#define KEY_2 A1
+#define KEY_3 A2
+
 bool first = true;
 float data[3];
 uint16_t count = 50;
@@ -46,6 +53,8 @@ void _readBytes(uint8_t address, uint8_t subAddress, uint8_t count, uint8_t * de
 float fix(float angle) {
     while (angle < 0) angle += 360;
     while (angle > 360) angle -= 360;
+    //if (angle < 0) angle = 0;
+    //if (angle > 360) angle = 360;
     return angle;
 }
 
@@ -67,7 +76,12 @@ void setup() {
     }
     else {
         while (1);
-    } 
+    }
+
+    pinMode(KEY_A, OUTPUT); digitalWrite(KEY_A, LOW);
+    pinMode(KEY_B, OUTPUT); digitalWrite(KEY_B, LOW);
+    pinMode(KEY_C, OUTPUT); digitalWrite(KEY_C, LOW);
+    
     Gamepad.begin();
 }
 
@@ -132,11 +146,11 @@ void loop() {
             myIMU.pitch -= data[1];
             myIMU.roll -= data[2];
         }
-
+        /*
         myIMU.yaw = fix(myIMU.yaw);
         myIMU.pitch = fix(myIMU.pitch);
         myIMU.roll = fix(myIMU.roll);
-        
+        */
     #ifdef DEBUG_FLAG
         Serial.print("Yaw, Pitch, Roll:\t");
         Serial.print(myIMU.yaw, 2);
@@ -157,27 +171,74 @@ void loop() {
 }
 
 int t = 0; bool ctrl = false;
+bool down = false, up = false;
+bool left = false, right = false;
+bool zlock = false;
+
+float cal[] = { 0, 0, 0 };
+
+float getYaw() { return myIMU.yaw - cal[0]; }
+float getPitch() { return myIMU.pitch - cal[1]; }
+float getRoll() { return myIMU.roll - cal[2]; }
+
 void work() {
+    up = down = left = right = zlock = false;
+    
+    digitalWrite(KEY_A, HIGH);
+    zlock = analogRead(KEY_1) > 400;
+    left = analogRead(KEY_2) > 400;
+    digitalWrite(KEY_A, LOW);
+    
+    digitalWrite(KEY_B, HIGH);
+    right = analogRead(KEY_1) > 400;
+    down = analogRead(KEY_2) > 400;
+    up = analogRead(KEY_3) > 400;
+    digitalWrite(KEY_B, LOW);   
+    
     if (ctrl) {
-        Gamepad.xAxis(map(fix(myIMU.pitch + 180), 0, 360, -32767, 32767));
-        Gamepad.yAxis(map(fix(myIMU.roll + 180), 0, 360, -32767, 32767));
-        //Gamepad.zAxis(map(fix(myIMU.yaw + 180), 0, 360, -127, 127));
+        if (up && down) {
+            cal[0] = myIMU.yaw;
+            cal[1] = myIMU.pitch;
+            cal[2] = myIMU.roll;
+        }
+        
+        Gamepad.xAxis(map(fix(getPitch() + 180), 0, 360, -32767, 32767));
+        Gamepad.yAxis(map(fix(getRoll() + 180), 0, 360, -32767, 32767));
+        Gamepad.zAxis(map(fix(getYaw() + 180), 0, 360, -127, 127));
         /*
         Gamepad.rxAxis(map(fix(myIMU.yaw + 180), 0, 360, -32767, 32767));
         Gamepad.ryAxis(map(fix(myIMU.pitch + 180), 0, 360, -32767, 32767));
         Gamepad.rzAxis(map(fix(myIMU.roll + 180), 0, 360, -127, 127));
         */
+
+        if (up && !down) {
+            Gamepad.yAxis(0);
+            Gamepad.zAxis(0);
+        } else if (!up && down) {
+            Gamepad.xAxis(0);
+            Gamepad.zAxis(0);
+        } else if (zlock) {
+            Gamepad.xAxis(0);
+            Gamepad.yAxis(0);
+        }
+
+        if (left) Gamepad.press(1);
+        else Gamepad.release(1);
+        if (right) Gamepad.press(2);
+        else Gamepad.release(2);
+        
         Gamepad.write();
     } else {
         if (t == 0) t = millis();
         else {
-            if (millis() - t > 3000) {
-                myIMU.yaw = 0;
-                myIMU.pitch = 0;
-                myIMU.roll = 0;
+            if (millis() - t > 1000) {
+                cal[0] = myIMU.yaw;
+                cal[1] = myIMU.pitch;
+                cal[2] = myIMU.roll;
                 ctrl = true;
             }
         }
     }
+    
 }
 
